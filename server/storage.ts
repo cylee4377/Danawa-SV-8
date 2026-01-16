@@ -1,37 +1,67 @@
-import { type User, type InsertUser } from "@shared/schema";
+import type { RadarModel, Nation, RadarResponse } from "@shared/schema";
 import { randomUUID } from "crypto";
 
-// modify the interface with any CRUD methods
-// you might need
-
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getRadarData(nation: Nation, month?: string): Promise<RadarResponse>;
+  saveRadarData(nation: Nation, month: string, models: RadarModel[]): Promise<void>;
+  getAvailableMonths(): Promise<string[]>;
 }
 
 export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
+  private radarCache: Map<string, { models: RadarModel[]; lastUpdated: string }>;
+  
   constructor() {
-    this.users = new Map();
+    this.radarCache = new Map();
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  private getCacheKey(nation: Nation, month: string): string {
+    return `${nation}:${month}`;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async getRadarData(nation: Nation, month?: string): Promise<RadarResponse> {
+    const currentMonth = month || this.getCurrentMonth();
+    const key = this.getCacheKey(nation, currentMonth);
+    const cached = this.radarCache.get(key);
+    
+    if (cached) {
+      return {
+        models: cached.models,
+        currentMonth,
+        lastUpdated: cached.lastUpdated,
+      };
+    }
+
+    return {
+      models: [],
+      currentMonth,
+      lastUpdated: new Date().toISOString(),
+    };
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async saveRadarData(nation: Nation, month: string, models: RadarModel[]): Promise<void> {
+    const key = this.getCacheKey(nation, month);
+    this.radarCache.set(key, {
+      models,
+      lastUpdated: new Date().toISOString(),
+    });
+  }
+
+  async getAvailableMonths(): Promise<string[]> {
+    const months: string[] = [];
+    const now = new Date();
+    
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-00`);
+    }
+    
+    return months;
+  }
+
+  private getCurrentMonth(): string {
+    const now = new Date();
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}-00`;
   }
 }
 
